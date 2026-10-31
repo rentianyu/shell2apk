@@ -16,7 +16,8 @@ data class Task(
     var component: String = "",
     var extras: String = "",
     var showOutput: Boolean = true,
-    var timeoutSec: Int = 20
+    var timeoutSec: Int = 20,
+    var packageName: String = ""
 ) {
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -30,6 +31,7 @@ data class Task(
         put("extras", extras)
         put("showOutput", showOutput)
         put("timeoutSec", timeoutSec)
+        put("packageName", packageName)
     }
 
     /** 写进被生成 APK 的 assets/config.json */
@@ -67,7 +69,8 @@ data class Task(
             component = o.optString("component", ""),
             extras = o.optString("extras", ""),
             showOutput = o.optBoolean("showOutput", true),
-            timeoutSec = o.optInt("timeoutSec", 20)
+            timeoutSec = o.optInt("timeoutSec", 20),
+            packageName = o.optString("packageName", "")
         )
     }
 }

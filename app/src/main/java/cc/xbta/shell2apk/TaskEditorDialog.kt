@@ -48,6 +48,7 @@ class TaskEditorDialog(
 
     private fun bindValues() {
         b.inputName.setText(task.name)
+        b.inputPackage.setText(task.packageName)
         b.inputIcon.setText(task.iconText)
         b.inputValue.setText(task.value)
         b.inputAction.setText(task.action)
@@ -89,6 +90,7 @@ class TaskEditorDialog(
 
     private fun collect(): Task {
         task.name = b.inputName.text?.toString()?.trim() ?: ""
+        task.packageName = b.inputPackage.text?.toString()?.trim() ?: ""
         task.iconText = b.inputIcon.text?.toString()?.trim() ?: ""
         task.kind = currentKind()
         task.value = b.inputValue.text?.toString() ?: ""
@@ -106,6 +108,14 @@ class TaskEditorDialog(
             b.layoutName.error = "请填写名称"
             return
         }
+        if (t.packageName.isNotBlank()) {
+            val err = cc.xbta.shell2apk.apk.ApkBuilder.validatePackage(t.packageName)
+            if (err != null) {
+                b.layoutPackage.error = err
+                return
+            }
+        }
+        b.layoutPackage.error = null
         if (t.kind != Task.KIND_INTENT && t.value.isBlank()) {
             b.layoutValue.error = "请填写内容"
             return

@@ -6,23 +6,31 @@
     android:background="?android:attr/colorBackground"
     android:orientation="vertical">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
+    <!-- 绿色一直铺到状态栏底下，状态栏图标由代码设为浅色，
+         工具栏本身用 inset 下推，标题就不会压到时间/信号上 -->
+    <FrameLayout
+        android:id="@+id/appBar"
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@color/brand"
-        app:title="Shell2APK"
-        app:titleTextColor="#FFFFFF" />
+        android:layout_height="wrap_content"
+        android:background="@color/brand">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:title="Shell2APK"
+            app:titleTextColor="#FFFFFF" />
+    </FrameLayout>
 
     <TextView
         android:id="@+id/hint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#F2F6F3"
-        android:paddingStart="14dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="14dp"
-        android:paddingBottom="8dp"
+        android:paddingStart="16dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="10dp"
         android:text="配置一个动作 → 生成 APK → 装到手机点图标即执行"
         android:textColor="#4A5A50"
         android:textSize="12sp" />
@@ -37,6 +45,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
+            android:paddingTop="6dp"
             android:paddingBottom="16dp" />
 
         <TextView

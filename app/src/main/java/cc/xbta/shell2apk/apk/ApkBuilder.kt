@@ -28,7 +28,7 @@ object ApkBuilder {
             }
         }
         val entries = ZipKit.read(tpl)
-        val pkg = newPackageName(task.id)
+        val pkg = resolvePackage(task)
         val label = task.name.trim().ifBlank { "Shell2APK" }
         val cfg = task.toRunnerConfig().toByteArray(Charsets.UTF_8)
         val iconText = task.iconText.trim().ifBlank { label.take(1) }
@@ -53,7 +53,7 @@ object ApkBuilder {
                     val edited = AxmlEditor.replaceStrings(e.data, mapOf(TPL_PKG to pkg, TPL_LABEL to label))
                     result.add(ZipEntryData(n, 8, edited))
                 }
-                n == "resources.arsc" -> result.add(ZipEntryData(n, 0, replacePackageEquals(e.data, pkg)))
+                n == "resources.arsc" -> result.add(ZipEntryData(n, 0, setArscPackage(e.data, pkg)))
                 n == "assets/config.json" -> result.add(ZipEntryData(n, 8, cfg))
                 isTemplateSignatureFile(n) -> {
                     // 丢掉模板的 v1 签名，后面统一重新签
@@ -86,6 +86,54 @@ object ApkBuilder {
         val hex = (h + "00000000").substring(0, 8)
         return "cc.xbta.s2a.a$hex"
     }
+
+    /** 用户自定义优先，留空则自动生成 */
+    fun resolvePackage(task: Task): String {
+        val c = task.packageName.trim()
+        return if (c.isEmpty()) newPackageName(task.id) else c
+    }
+
+    /** 返回 null 表示合法 */
+    fun validatePackage(pkg: String): String? {
+        if (pkg.isEmpty()) return null
+        if (pkg.length > 100) return "包名太长（最多 100 个字符）"
+        if (!pkg.matches(Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$"))) {
+            return "需字母开头、至少两段、以点分隔，例如 com.example.myapp"
+        }
+        return null
+    }
+
+    /**
+     * 改 resources.arsc 里 package chunk 的 name 字段（第 12 字节起 256 字节的 UTF-16 定长数组）。
+     * 定长写入 → 支持任意长度的自定义包名，不用等长替换。
+     */
+    private fun setArscPackage(data: ByteArray, newPkg: String): ByteArray {
+        val out = data.copyOf()
+        var pos = if (data.size >= 8) u16(data, 2) else 0
+        while (pos + 8 <= out.size) {
+            val type = u16(out, pos)
+            val size = i32(out, pos + 4)
+            if (size <= 0 || pos + size > out.size) break
+            if (type == 0x0200) {
+                val nameBytes = newPkg.toByteArray(Charsets.UTF_16LE)
+                val n = minOf(nameBytes.size, 254)
+                System.arraycopy(nameBytes, 0, out, pos + 12, n)
+                for (i in pos + 12 + n until pos + 12 + 256) out[i] = 0
+                return out
+            }
+            pos += size
+        }
+        return replacePackageEquals(out, newPkg)
+    }
+
+    private fun u16(d: ByteArray, o: Int): Int =
+        (d[o].toInt() and 0xff) or ((d[o + 1].toInt() and 0xff) shl 8)
+
+    private fun i32(d: ByteArray, o: Int): Int =
+        (d[o].toInt() and 0xff) or
+            ((d[o + 1].toInt() and 0xff) shl 8) or
+            ((d[o + 2].toInt() and 0xff) shl 16) or
+            ((d[o + 3].toInt() and 0xff) shl 24)
 
     private fun isIconEntry(n: String): Boolean =
         n.startsWith("res/mipmap-") && n.endsWith("/ic_launcher.png")
