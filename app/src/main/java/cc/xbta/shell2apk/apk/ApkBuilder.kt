@@ -12,7 +12,7 @@ import java.io.File
  *  1. AndroidManifest.xml 的包名 + 应用名（重建字符串池）
  *  2. resources.arsc 里的包名（等长字节替换）
  *  3. assets/config.json 换成任务配置
- *  4. res/mipmap-*/ic_launcher.png 换成生成的图标
+ *  4. 各密度 mipmap 的 ic_launcher.png 换成生成的图标
  *  5. 丢掉模板自带的 v1 签名文件，最后用内置 keystore 重新签名
  */
 object ApkBuilder {
