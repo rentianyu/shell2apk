@@ -1,0 +1,132 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.14.6
+        run: |
+          set -e
+          cd "$HOME"
+          wget -q https://services.gradle.org/distributions/gradle-8.14.6-bin.zip
+          unzip -q gradle-8.14.6-bin.zip -d "$HOME"
+          echo "$HOME/gradle-8.14.6/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Install Android SDK platform 36
+        run: |
+          set -e
+          SM="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SM" ]; then SM="$(command -v sdkmanager)"; fi
+          echo "sdkmanager: $SM"
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Prepare signing keystore
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PWD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+          if [ -z "$KS_B64" ]; then echo "missing KEYSTORE_BASE64 secret"; exit 1; fi
+          printf '%s' "$KS_B64" | base64 -d > keystore.p12
+          mkdir -p app/src/main/assets
+          cp keystore.p12 app/src/main/assets/keystore.p12
+          {
+            echo "storeFile=keystore.p12"
+            echo "storePassword=$KS_PWD"
+            echo "keyAlias=$KS_ALIAS"
+            echo "keyPassword=$KS_PWD"
+          } > keystore.properties
+          ls -l keystore.p12 app/src/main/assets/keystore.p12
+
+      - name: Build runner template
+        run: gradle :runner:assembleRelease --no-daemon --stacktrace
+
+      - name: Put template into app assets
+        run: |
+          set -e
+          TPL="$(find runner/build/outputs/apk/release -name '*.apk' | head -1)"
+          echo "template: $TPL"
+          cp "$TPL" app/src/main/assets/runner.apk
+          ls -l app/src/main/assets/
+
+      - name: Build generator app
+        run: |
+          set -e
+          VC=$((100 + GITHUB_RUN_NUMBER))
+          VN="1.0.${GITHUB_RUN_NUMBER}"
+          echo "versionCode=$VC versionName=$VN"
+          gradle :app:assembleRelease --no-daemon --stacktrace -Ps2aVersionCode=$VC -Ps2aVersionName=$VN
+
+      - name: Collect outputs
+        run: |
+          set -e
+          mkdir -p dist
+          APK="$(find app/build/outputs/apk/release -name '*.apk' | head -1)"
+          echo "app apk: $APK"
+          cp "$APK" dist/shell2apk.apk
+          cp "$APK" "dist/shell2apk-v1.0.${GITHUB_RUN_NUMBER}.apk"
+          TPL="$(find runner/build/outputs/apk/release -name '*.apk' | head -1)"
+          cp "$TPL" dist/runner-template.apk
+          ls -l dist
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs dist/shell2apk.apk || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shell2apk-v1.0.${{ github.run_number }}
+          path: dist/*.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Shell2APK v1.0.${{ github.run_number }}
+          make_latest: true
+          prerelease: false
+          body: |
+            Shell2APK —— 用手机自己生成「点一下执行某个动作」的 APK。
+
+            **下载：`shell2apk.apk`**（生成器本体，装这个）
+
+            功能：
+            - Shell 命令 / URL Scheme / 启动应用 / 自定义 Intent 四类动作
+            - 每个任务生成一个独立 APK（独立包名、独立图标、独立名称）
+            - 生成的 APK 与本 App 同签名，可直接覆盖升级
+
+            build: ${{ github.run_number }} · ${{ github.sha }}
+          files: |
+            dist/shell2apk.apk
+            dist/shell2apk-v1.0.${{ github.run_number }}.apk
+            dist/runner-template.apk
