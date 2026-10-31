@@ -10,18 +10,33 @@
 
 | 动作类型 | 用途 | 例子 |
 |---|---|---|
-| Shell 命令 | 用 `/system/bin/sh -c` 执行命令，可回显输出 | `getprop ro.build.version.release` |
+| Shell 命令 | 执行命令，可回显输出；**执行身份可选普通 / Shizuku / Root** | `getprop ro.build.version.release` |
 | 链接 | 打开 URL 或任意 URL Scheme | `https://example.com`、`weixin://`、`intent://…` |
 | 活动 | 启动指定 App 的某个 Activity | `com.tencent.mm/.ui.LauncherUI`（可从已装应用里选） |
 | Intent | 自定义 action / component / uri / extras | `android.intent.action.VIEW` |
 | 广播 | 发送广播，action 必填、可指定目标包名 | `com.example.ACTION_DO` |
 
+- Shell 命令支持三种执行身份（新建任务时的「执行身份」下拉）：
+  - **普通**：`/system/bin/sh -c`，本应用自己的权限（默认）
+  - **Shizuku**：走 [Shizuku](https://shizuku.rikka.app)，拿到 ADB shell 级权限（uid 2000），无需 root
+  - **Root**：`su -c`，需要设备已 root（Magisk / KernelSU 等）
 - 每个任务生成一个独立 APK，包名可自定义（留空则自动分配），互不冲突
+  （Shizuku provider 的 authorities 会随包名一起改写，多个 APK 并存不冲突）
 - 图标按动作类型着色，可自定义 1 个字符
 - 首页支持文件夹分组，任务可归到文件夹里
-- App 内自动更新，更新源可选 GitHub 直链 / GitHub 代理 / 自定义代理前缀
+- App 内自动更新，内置 4 条公共 GitHub 加速线路并发选优（gh-proxy.com / ghfast.top / ghproxy.net / ghproxy.link），直链兜底
+- 生成的 APK 执行完动作后**彻底退出**：杀子进程 + 移除任务栈 + 结束进程，不留后台
 - 生成的 APK 与生成器同签名，可直接覆盖升级
 - 生成器自带「试运行」，先在当前 App 里验证动作再打包
+
+### Shizuku 使用前提
+
+手机上装 [Shizuku](https://shizuku.rikka.app) 并通过 ADB 或 root 启动服务（Shizuku 11+）。
+生成出来的 APK 第一次用 Shizuku 身份执行时会弹授权框，允许即可。
+未授权时 App 会提示「Shizuku 未运行 / 权限被拒」。
+
+> 依赖锁在 `dev.rikka.shizuku:api:12.1.0`：13.x 把 `Shizuku.newProcess` 改成了 private，
+> 12.1.0 仍是 public static，能直接拿到一个有 stdout/stderr 的 `Process`。
 
 ## 原理
 
