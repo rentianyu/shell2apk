@@ -6,7 +6,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
+import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
+import android.text.InputType
 import androidx.appcompat.app.AppCompatActivity
 import cc.xbta.shell2apk.databinding.DialogTaskBinding
 
@@ -14,9 +17,15 @@ import cc.xbta.shell2apk.databinding.DialogTaskBinding
 class TaskEditorDialog(
     private val act: AppCompatActivity,
     original: Task,
-    private val folders: List<Folder>,
+    private val folders: MutableList<Folder>,
+    /** 新建文件夹：由调用方负责落库，返回新对象（失败返回 null） */
+    private val onCreateFolder: ((String) -> Folder?)? = null,
     private val onSaved: (Task) -> Unit
 ) {
+
+    companion object {
+        private const val NEW_FOLDER = "＋ 新建文件夹…"
+    }
 
     private val task = original.copy()
     private val b: DialogTaskBinding
@@ -63,14 +72,55 @@ class TaskEditorDialog(
     private fun setupFolder() {
         val names = mutableListOf("（未分组）")
         folders.forEach { names.add(it.name) }
+        names.add(NEW_FOLDER)
         b.inputFolder.setAdapter(ArrayAdapter(act, android.R.layout.simple_list_item_1, names.toTypedArray()))
-        val idx = folders.indexOfFirst { it.id == task.folderId }
+        val cur = folderId.ifBlank { task.folderId }
+        val idx = folders.indexOfFirst { it.id == cur }
         folderId = if (idx >= 0) folders[idx].id else ""
         b.inputFolder.setText(if (idx >= 0) folders[idx].name else "（未分组）", false)
         b.inputFolder.setOnItemClickListener { _, _, pos, _ ->
-            folderId = if (pos == 0) "" else folders[pos - 1].id
-            b.inputFolder.setText(if (pos == 0) "（未分组）" else folders[pos - 1].name, false)
+            when {
+                pos == 0 -> {
+                    folderId = ""
+                    b.inputFolder.setText("（未分组）", false)
+                }
+                pos == names.size - 1 -> askNewFolder()
+                else -> {
+                    folderId = folders[pos - 1].id
+                    b.inputFolder.setText(folders[pos - 1].name, false)
+                }
+            }
         }
+    }
+
+    /** 在新建任务的同时新建文件夹，建完自动选中 */
+    private fun askNewFolder() {
+        val et = EditText(act).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            hint = "文件夹名称"
+            setPadding(48, 32, 48, 16)
+        }
+        AlertDialog.Builder(act)
+            .setTitle("新建文件夹")
+            .setView(et)
+            .setPositiveButton("创建") { _, _ ->
+                val name = et.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(act, "名称不能为空", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val f = onCreateFolder?.invoke(name)
+                if (f == null) {
+                    Toast.makeText(act, "无法新建文件夹", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                folderId = f.id
+                setupFolder()
+                b.inputFolder.setText(f.name, false)
+                Toast.makeText(act, "已创建并选中：" + f.name, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun bindValues() {

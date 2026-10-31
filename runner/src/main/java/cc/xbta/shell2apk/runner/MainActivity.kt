@@ -7,6 +7,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process as OsProcess
 import android.text.method.ScrollingMovementMethod
 import android.util.TypedValue
 import android.view.ViewGroup
@@ -25,6 +28,8 @@ import java.util.concurrent.TimeUnit
  */
 class MainActivity : Activity() {
 
+    private var child: java.lang.Process? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val cfg = loadConfig()
@@ -33,27 +38,69 @@ class MainActivity : Activity() {
             when (kind) {
                 "url" -> {
                     openUrl(cfg.optString("value"))
-                    finish()
+                    exitAll(700)
                 }
                 "app", "activity" -> {
                     startActivitySpec(cfg.optString("value"))
-                    finish()
+                    exitAll(700)
                 }
                 "intent" -> {
                     fireIntent(cfg)
-                    finish()
+                    exitAll(700)
                 }
                 "broadcast" -> {
                     fireBroadcast(cfg)
-                    finish()
+                    exitAll(1500)
                 }
-                "none" -> finish()
+                "none" -> exitAll(200)
                 else -> runShell(cfg)
             }
         } catch (t: Throwable) {
             toast("执行失败：" + (t.message ?: t.javaClass.simpleName))
-            finish()
+            exitAll(1500)
         }
+    }
+
+    /**
+     * 执行完就彻底退出：杀掉子进程 → 移除任务栈（不进最近任务）→ 结束本进程。
+     * 目的是「打开→执行→关闭」之后不留任何进程和后台。
+     */
+    private fun exitAll(delayMs: Long = 300L) {
+        try {
+            child?.let { if (it.isAlive) it.destroyForcibly() }
+        } catch (ignored: Throwable) {
+        }
+        child = null
+        try {
+            finishAndRemoveTask()
+        } catch (ignored: Throwable) {
+            try {
+                finish()
+            } catch (ignored2: Throwable) {
+            }
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                OsProcess.killProcess(OsProcess.myPid())
+            } catch (ignored: Throwable) {
+            }
+            System.exit(0)
+        }, delayMs)
+    }
+
+    /** 用户按返回键 = 主动关闭，同样要彻底退出（并杀掉还在跑的 shell） */
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        exitAll(200)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            child?.let { if (it.isAlive) it.destroyForcibly() }
+        } catch (ignored: Throwable) {
+        }
+        child = null
     }
 
     private fun loadConfig(): JSONObject {
@@ -79,6 +126,7 @@ class MainActivity : Activity() {
                 val pb = ProcessBuilder("/system/bin/sh", "-c", cmd)
                 pb.redirectErrorStream(true)
                 val p = pb.start()
+                child = p
                 val readerThread = Thread {
                     try {
                         BufferedReader(InputStreamReader(p.inputStream)).use { r ->
@@ -110,12 +158,18 @@ class MainActivity : Activity() {
                 synchronized(sb) { sb.append("执行异常: ").append(t.toString()) }
             }
             val out = synchronized(sb) { sb.toString() }
+            child = null
             runOnUiThread {
+                // 已经退到后台（用户切走了）或界面已销毁：不弹窗，直接退出，绝不挂在后台
+                if (isFinishing || isDestroyed || !hasWindowFocus()) {
+                    exitAll(300)
+                    return@runOnUiThread
+                }
                 if (showOutput) {
                     showOutputDialog(label, out, exit)
                 } else {
                     toast("\u5B8C\u6210 (exit=$exit) " + summary(out))
-                    finish()
+                    exitAll(1500)
                 }
             }
         }.apply { isDaemon = true }.start()
@@ -158,7 +212,7 @@ class MainActivity : Activity() {
         val d = AlertDialog.Builder(this)
             .setTitle("$label  ·  exit=$exit")
             .setView(wrap)
-            .setPositiveButton("关闭") { _, _ -> finish() }
+            .setPositiveButton("关闭") { _, _ -> exitAll(200) }
             .create()
         d.setCancelable(false)
         d.show()

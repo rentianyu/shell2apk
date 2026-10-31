@@ -172,7 +172,16 @@ class MainActivity : AppCompatActivity() {
     // ---------------- 任务 ----------------
 
     private fun openEditor(task: Task) {
-        TaskEditorDialog(this, task, folders) { saved ->
+        TaskEditorDialog(
+            this, task, folders,
+            onCreateFolder = { name ->
+                val f = Folder(name = name, expanded = true)
+                folders.add(f)
+                store.saveFolders(folders)
+                refresh()
+                f
+            }
+        ) { saved ->
             val idx = items.indexOfFirst { it.id == saved.id }
             if (idx >= 0) items[idx] = saved else items.add(saved)
             store.save(items)
