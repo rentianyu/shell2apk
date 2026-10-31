@@ -12,6 +12,15 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
 
+        <!-- Shizuku：authorities 里的包名会在生成时随包名一起替换 -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="cc.xbta.shell2apk.tpl.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <activity
             android:name="cc.xbta.shell2apk.runner.MainActivity"
             android:exported="true"

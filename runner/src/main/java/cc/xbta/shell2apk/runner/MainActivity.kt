@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -18,6 +19,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
+import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
@@ -29,6 +31,11 @@ import java.util.concurrent.TimeUnit
 class MainActivity : Activity() {
 
     private var child: java.lang.Process? = null
+    private var pendingShizuku: (() -> Unit)? = null
+
+    companion object {
+        private const val REQ_SHIZUKU = 1001
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -115,7 +122,78 @@ class MainActivity : Activity() {
     // ---------------- shell ----------------
 
     private fun runShell(cfg: JSONObject) {
+        val exec = cfg.optString("exec", "shell")
+        if (exec == "shizuku") {
+            // Shizuku 授权是异步的：已授权就直接跑，否则弹权限框，回调里再跑
+            if (ensureShizuku { doRunShell(cfg, exec) }) return
+            return
+        }
+        doRunShell(cfg, exec)
+    }
+
+    /**
+     * 确保拿到 Shizuku 授权。
+     * @return true = 已有权限且已同步执行 onReady；false = 已发起请求或已失败退出
+     */
+    private fun ensureShizuku(onReady: () -> Unit): Boolean {
+        if (!Shizuku.pingBinder()) {
+            toast("Shizuku 未运行：请先打开 Shizuku 启动服务")
+            exitAll(2400)
+            return false
+        }
+        if (Shizuku.isPreV11()) {
+            toast("Shizuku 版本太旧，请升级到 11 以上")
+            exitAll(2400)
+            return false
+        }
+        if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+            onReady()
+            return true
+        }
+        if (Shizuku.shouldShowRequestPermissionRationale()) {
+            toast("Shizuku 权限已被拒绝：请在 Shizuku 应用里允许本应用")
+            exitAll(2800)
+            return false
+        }
+        pendingShizuku = onReady
+        try {
+            Shizuku.requestPermission(REQ_SHIZUKU)
+        } catch (t: Throwable) {
+            toast("请求 Shizuku 授权失败：" + (t.message ?: t.javaClass.simpleName))
+            exitAll(2400)
+        }
+        return false
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_SHIZUKU) return
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        val cb = pendingShizuku
+        pendingShizuku = null
+        if (granted && cb != null) {
+            cb()
+        } else {
+            toast("未授予 Shizuku 权限")
+            exitAll(2400)
+        }
+    }
+
+    /** 按执行身份启动进程：普通 / Shizuku（ADB shell 身份）/ Root（su） */
+    private fun startProcess(cfg: JSONObject, exec: String): java.lang.Process {
         val cmd = cfg.optString("value", "")
+        return when (exec) {
+            "root" -> ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
+            "shizuku" -> Shizuku.newProcess(arrayOf("/system/bin/sh", "-c", cmd), null, null)
+            else -> ProcessBuilder("/system/bin/sh", "-c", cmd).redirectErrorStream(true).start()
+        }
+    }
+
+    private fun doRunShell(cfg: JSONObject, exec: String) {
         val timeout = cfg.optInt("timeoutSec", 20).coerceIn(1, 600)
         val showOutput = cfg.optBoolean("showOutput", true)
         val label = cfg.optString("name", "Shell2APK")
@@ -123,32 +201,26 @@ class MainActivity : Activity() {
             val sb = StringBuilder()
             var exit = -1
             try {
-                val pb = ProcessBuilder("/system/bin/sh", "-c", cmd)
-                pb.redirectErrorStream(true)
-                val p = pb.start()
+                val p = startProcess(cfg, exec)
                 child = p
-                val readerThread = Thread {
-                    try {
-                        BufferedReader(InputStreamReader(p.inputStream)).use { r ->
-                            val buf = CharArray(4096)
-                            while (true) {
-                                val n = r.read(buf)
-                                if (n <= 0) break
-                                synchronized(sb) {
-                                    if (sb.length < 200000) sb.append(buf, 0, n)
-                                }
-                            }
-                        }
-                    } catch (ignored: Throwable) {
-                    }
-                }
-                readerThread.start()
+                // stdout 与 stderr 各一个读线程：Shizuku 的进程不能 redirectErrorStream，
+                // 单线程顺序读会在缓冲写满时卡死
+                val t1 = Thread { pump(p.inputStream, sb) }
+                val t2 = Thread { pump(p.errorStream, sb) }
+                t1.isDaemon = true
+                t2.isDaemon = true
+                t1.start()
+                t2.start()
                 val finished = p.waitFor(timeout.toLong(), TimeUnit.SECONDS)
                 if (!finished) {
-                    p.destroyForcibly()
+                    try {
+                        p.destroyForcibly()
+                    } catch (ignored: Throwable) {
+                    }
                     synchronized(sb) { sb.append("\n[超时 ").append(timeout).append("s，进程已终止]") }
                 }
-                readerThread.join(2000)
+                t1.join(1500)
+                t2.join(1500)
                 exit = try {
                     p.exitValue()
                 } catch (e: IllegalThreadStateException) {
@@ -156,6 +228,9 @@ class MainActivity : Activity() {
                 }
             } catch (t: Throwable) {
                 synchronized(sb) { sb.append("执行异常: ").append(t.toString()) }
+                if (exec == "root") {
+                    synchronized(sb) { sb.append("\n（未获取 root 权限：su 不可用或已拒绝授权）") }
+                }
             }
             val out = synchronized(sb) { sb.toString() }
             child = null
@@ -173,6 +248,22 @@ class MainActivity : Activity() {
                 }
             }
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun pump(input: java.io.InputStream, sb: StringBuilder) {
+        try {
+            BufferedReader(InputStreamReader(input)).use { r ->
+                val buf = CharArray(4096)
+                while (true) {
+                    val n = r.read(buf)
+                    if (n <= 0) break
+                    synchronized(sb) {
+                        if (sb.length < 200000) sb.append(buf, 0, n)
+                    }
+                }
+            }
+        } catch (ignored: Throwable) {
+        }
     }
 
     private fun summary(out: String): String {

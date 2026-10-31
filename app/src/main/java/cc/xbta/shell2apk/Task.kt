@@ -39,7 +39,9 @@ data class Task(
     var extras: String = "",
     var showOutput: Boolean = true,
     var timeoutSec: Int = 20,
-    var packageName: String = ""
+    var packageName: String = "",
+    /** shell 命令的执行身份：shell（本应用）/ shizuku（ADB 权限）/ root（su） */
+    var exec: String = EXEC_SHELL
 ) {
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -55,6 +57,7 @@ data class Task(
         put("showOutput", showOutput)
         put("timeoutSec", timeoutSec)
         put("packageName", packageName)
+        put("exec", exec)
     }
 
     /** 写进被生成 APK 的 assets/config.json */
@@ -67,6 +70,7 @@ data class Task(
         put("extras", extras)
         put("showOutput", showOutput)
         put("timeoutSec", timeoutSec)
+        put("exec", exec)
     }.toString()
 
     companion object {
@@ -75,6 +79,18 @@ data class Task(
         const val KIND_ACTIVITY = "activity"
         const val KIND_INTENT = "intent"
         const val KIND_BROADCAST = "broadcast"
+
+        const val EXEC_SHELL = "shell"
+        const val EXEC_SHIZUKU = "shizuku"
+        const val EXEC_ROOT = "root"
+
+        val EXECS = listOf(EXEC_SHELL, EXEC_SHIZUKU, EXEC_ROOT)
+
+        fun execLabel(e: String): String = when (e) {
+            EXEC_SHIZUKU -> "Shizuku（ADB 权限）"
+            EXEC_ROOT -> "Root（su）"
+            else -> "普通（本应用权限）"
+        }
 
         /** 下拉框顺序，与 kindLabel 一一对应 */
         val KINDS = listOf(KIND_SHELL, KIND_URL, KIND_ACTIVITY, KIND_INTENT, KIND_BROADCAST)
@@ -103,7 +119,8 @@ data class Task(
                 extras = o.optString("extras", ""),
                 showOutput = o.optBoolean("showOutput", true),
                 timeoutSec = o.optInt("timeoutSec", 20),
-                packageName = o.optString("packageName", "")
+                packageName = o.optString("packageName", ""),
+                exec = o.optString("exec", EXEC_SHELL)
             )
         }
     }

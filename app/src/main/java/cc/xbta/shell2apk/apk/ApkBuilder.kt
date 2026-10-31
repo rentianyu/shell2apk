@@ -50,7 +50,16 @@ object ApkBuilder {
             val fpx = fallbackMap[n]
             when {
                 n == "AndroidManifest.xml" -> {
-                    val edited = AxmlEditor.replaceStrings(e.data, mapOf(TPL_PKG to pkg, TPL_LABEL to label))
+                    // 包名/应用名/Shizuku provider 的 authorities 必须一起换，
+                    // 否则多个生成出来的 APK 会因同名 provider 冲突而装不上
+                    val edited = AxmlEditor.replaceStrings(
+                        e.data,
+                        mapOf(
+                            TPL_PKG to pkg,
+                            TPL_LABEL to label,
+                            "$TPL_PKG.shizuku" to "$pkg.shizuku"
+                        )
+                    )
                     result.add(ZipEntryData(n, 8, edited))
                 }
                 n == "resources.arsc" -> result.add(ZipEntryData(n, 0, setArscPackage(e.data, pkg)))

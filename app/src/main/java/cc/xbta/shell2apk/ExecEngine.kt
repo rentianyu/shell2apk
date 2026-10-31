@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
+import rikka.shizuku.Shizuku
 
 /** 「试运行」：在生成器自己的进程里直接执行一次，方便验证配置是否正确。 */
 object ExecEngine {
@@ -28,7 +29,16 @@ object ExecEngine {
                     fireBroadcast(ctx, task)
                     onDone("已发送广播")
                 }
-                else -> shell(task, onDone)
+                else -> {
+                    if (task.exec == Task.EXEC_SHIZUKU) {
+                        val st = shizukuState(ctx)
+                        if (st != null) {
+                            onDone(st)
+                            return
+                        }
+                    }
+                    shell(task, onDone, task.exec)
+                }
             }
         } catch (t: Throwable) {
             onDone("失败：" + (t.message ?: t.javaClass.simpleName))
@@ -114,35 +124,51 @@ object ExecEngine {
         ctx.sendBroadcast(i)
     }
 
-    private fun shell(task: Task, onDone: (String) -> Unit) {
+    /**
+     * 检查 Shizuku 可用性。返回 null 表示已授权可直接执行，返回字符串表示需要提示用户的原因。
+     */
+    private fun shizukuState(ctx: Activity): String? {
+        if (!Shizuku.pingBinder()) return "Shizuku 未运行：请先打开 Shizuku 启动服务"
+        if (Shizuku.isPreV11()) return "Shizuku 版本太旧，请升级到 11 以上"
+        if (Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED) return null
+        if (Shizuku.shouldShowRequestPermissionRationale()) {
+            return "Shizuku 权限已被拒绝：请在 Shizuku 应用里允许 Shell2APK"
+        }
+        try {
+            Shizuku.requestPermission(2001)
+            return "已弹出 Shizuku 授权请求，允许后再点一次「试运行」"
+        } catch (t: Throwable) {
+            return "请求 Shizuku 授权失败：" + (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    private fun shell(task: Task, onDone: (String) -> Unit, exec: String) {
         val cmd = task.value
         val timeout = task.timeoutSec.coerceIn(1, 600)
         Thread {
             val sb = StringBuilder()
             try {
-                val pb = ProcessBuilder("/system/bin/sh", "-c", cmd)
-                pb.redirectErrorStream(true)
-                val p = pb.start()
-                val rt = Thread {
-                    try {
-                        BufferedReader(InputStreamReader(p.inputStream)).use { r ->
-                            val buf = CharArray(4096)
-                            while (true) {
-                                val n = r.read(buf)
-                                if (n <= 0) break
-                                synchronized(sb) { if (sb.length < 200000) sb.append(buf, 0, n) }
-                            }
-                        }
-                    } catch (ignored: Throwable) {
-                    }
+                val p: java.lang.Process = when (exec) {
+                    Task.EXEC_ROOT -> ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start()
+                    Task.EXEC_SHIZUKU -> Shizuku.newProcess(arrayOf("/system/bin/sh", "-c", cmd), null, null)
+                    else -> ProcessBuilder("/system/bin/sh", "-c", cmd).redirectErrorStream(true).start()
                 }
+                val rt = Thread { pump(p.inputStream, sb) }
+                val et = Thread { pump(p.errorStream, sb) }
+                rt.isDaemon = true
+                et.isDaemon = true
                 rt.start()
+                et.start()
                 val finished = p.waitFor(timeout.toLong(), TimeUnit.SECONDS)
                 if (!finished) {
-                    p.destroyForcibly()
+                    try {
+                        p.destroyForcibly()
+                    } catch (ignored: Throwable) {
+                    }
                     synchronized(sb) { sb.append("\n[超时 ").append(timeout).append("s]") }
                 }
                 rt.join(1500)
+                et.join(1500)
                 val code = try {
                     p.exitValue()
                 } catch (e: IllegalThreadStateException) {
@@ -151,8 +177,25 @@ object ExecEngine {
                 synchronized(sb) { sb.append("\n\nexit=").append(code) }
             } catch (t: Throwable) {
                 synchronized(sb) { sb.append("执行异常: ").append(t.toString()) }
+                if (exec == Task.EXEC_ROOT) {
+                    synchronized(sb) { sb.append("\n（未获取 root 权限：su 不可用或已拒绝授权）") }
+                }
             }
             onDone(synchronized(sb) { sb.toString() })
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun pump(input: java.io.InputStream, sb: StringBuilder) {
+        try {
+            BufferedReader(InputStreamReader(input)).use { r ->
+                val buf = CharArray(4096)
+                while (true) {
+                    val n = r.read(buf)
+                    if (n <= 0) break
+                    synchronized(sb) { if (sb.length < 200000) sb.append(buf, 0, n) }
+                }
+            }
+        } catch (ignored: Throwable) {
+        }
     }
 }

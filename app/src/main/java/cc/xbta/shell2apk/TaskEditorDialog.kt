@@ -32,6 +32,7 @@ class TaskEditorDialog(
     private val dlg: AlertDialog
     private var kind: String = task.kind
     private var folderId: String = task.folderId
+    private var exec: String = task.exec
 
     init {
         val view = LayoutInflater.from(act).inflate(R.layout.dialog_task, null)
@@ -39,6 +40,7 @@ class TaskEditorDialog(
         dlg = AlertDialog.Builder(act).setView(view).create()
 
         setupKind()
+        setupExec()
         setupFolder()
         bindValues()
 
@@ -67,6 +69,16 @@ class TaskEditorDialog(
             applyKind(Task.KINDS[pos])
         }
         applyKind(task.kind)
+    }
+
+    private fun setupExec() {
+        val labels = Task.EXECS.map { Task.execLabel(it) }.toTypedArray()
+        b.inputExec.setAdapter(ArrayAdapter(act, android.R.layout.simple_list_item_1, labels))
+        b.inputExec.setText(Task.execLabel(task.exec), false)
+        b.inputExec.setOnItemClickListener { _, _, pos, _ ->
+            exec = Task.EXECS[pos]
+            b.inputExec.setText(Task.execLabel(exec), false)
+        }
     }
 
     private fun setupFolder() {
@@ -133,6 +145,7 @@ class TaskEditorDialog(
         b.inputExtras.setText(task.extras)
         b.switchOutput.isChecked = task.showOutput
         b.inputTimeout.setText(task.timeoutSec.toString())
+        b.inputExec.setText(Task.execLabel(task.exec), false)
     }
 
     // ---------------- 类型联动 ----------------
@@ -178,6 +191,7 @@ class TaskEditorDialog(
         task.extras = b.inputExtras.text?.toString()?.trim() ?: ""
         task.showOutput = b.switchOutput.isChecked
         task.timeoutSec = b.inputTimeout.text?.toString()?.trim()?.toIntOrNull() ?: 20
+        task.exec = exec
         return task
     }
 

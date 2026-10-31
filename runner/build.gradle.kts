@@ -71,5 +71,7 @@ kotlin {
 }
 
 dependencies {
-    // 模板 App 不依赖任何第三方库，保证生成出来的 APK 体积最小
+    // 只有 Shizuku 这两个库（约 100KB），用来以 ADB/shell 身份执行命令
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }
