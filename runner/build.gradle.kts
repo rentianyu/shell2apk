@@ -71,7 +71,8 @@ kotlin {
 }
 
 dependencies {
-    // 只有 Shizuku 这两个库（约 100KB），用来以 ADB/shell 身份执行命令
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
+    // 只有 Shizuku 这两个库，用来以 ADB/shell 身份执行命令。
+    // 锁 12.1.0：13.x 把 Shizuku.newProcess 改成了 private，12.1.0 仍是 public static。
+    implementation("dev.rikka.shizuku:api:12.1.0")
+    implementation("dev.rikka.shizuku:provider:12.1.0")
 }

@@ -77,6 +77,6 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("com.android.tools.build:apksig:8.13.2")
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("dev.rikka.shizuku:api:12.1.0")
+    implementation("dev.rikka.shizuku:provider:12.1.0")
 }
