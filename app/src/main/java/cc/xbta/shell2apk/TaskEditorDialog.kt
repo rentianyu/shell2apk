@@ -39,10 +39,16 @@ class TaskEditorDialog(
         b = DialogTaskBinding.bind(view)
         dlg = AlertDialog.Builder(act).setView(view).create()
 
-        setupKind()
-        setupExec()
-        setupFolder()
-        bindValues()
+        try {
+            setupKind()
+            setupExec()
+            setupFolder()
+            bindValues()
+        } catch (t: Throwable) {
+            // 兜底：初始化出问题也不要把整个 App 带走
+            android.util.Log.e("S2A", "editor init failed", t)
+            Toast.makeText(act, "界面初始化异常：" + t, Toast.LENGTH_LONG).show()
+        }
 
         b.btnCancel.setOnClickListener { dlg.dismiss() }
         b.btnTest.setOnClickListener { runTest() }
