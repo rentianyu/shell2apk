@@ -91,12 +91,15 @@ object UpdateChecker {
     private fun checkByPage(ctx: Context): Release {
         val pageUrl = "https://github.com/$REPO/releases/latest"
         val html = httpGet(wrap(ctx, pageUrl), "text/html")
-        val m = Regex("/releases/tag/([A-Za-z0-9._-]+)").find(html)
+        // 页面里出现的形式可能是 "…/releases/tag/v1.0.8"、"releases/tag/v1.0.8&quot;"、
+        // 甚至 "releases/tag/*name"（模板），所以不能要求前导斜杠，且必须以数字版本开头。
+        val m = Regex("releases/tag/(v?[0-9][A-Za-z0-9._-]*)").find(html)
             ?: throw IllegalStateException("页面里没找到 release tag")
         val tag = m.groupValues[1]
         val ver = tag.removePrefix("v")
-        if (ver.isBlank()) throw IllegalStateException("tag 解析失败")
-        val dl = "https://github.com/$REPO/releases/download/$tag/shell2apk-$ver.apk"
+        if (ver.isEmpty() || !ver[0].isDigit()) throw IllegalStateException("tag 解析失败：$tag")
+        // asset 命名规则与 CI 一致：shell2apk-<tag>.apk，即 shell2apk-v1.0.8.apk
+        val dl = "https://github.com/$REPO/releases/download/$tag/shell2apk-$tag.apk"
         return Release(
             tag = tag,
             versionName = ver,
