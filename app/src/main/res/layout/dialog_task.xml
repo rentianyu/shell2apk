@@ -98,13 +98,17 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
-                android:hint="文件夹">
+                android:hint="文件夹（点击选择）">
 
-                <AutoCompleteTextView
+                <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/inputFolder"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="none" />
+                    android:clickable="true"
+                    android:cursorVisible="false"
+                    android:focusable="false"
+                    android:inputType="none"
+                    android:maxLines="1" />
             </com.google.android.material.textfield.TextInputLayout>
         </LinearLayout>
 
@@ -150,13 +154,17 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:hint="执行身份">
+                android:hint="执行身份（点击选择）">
 
-                <AutoCompleteTextView
+                <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/inputExec"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="none" />
+                    android:clickable="true"
+                    android:cursorVisible="false"
+                    android:focusable="false"
+                    android:inputType="none"
+                    android:maxLines="1" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.materialswitch.MaterialSwitch

@@ -72,37 +72,62 @@ class TaskEditorDialog(
     }
 
     private fun setupExec() {
+        b.inputExec.setText(Task.execLabel(exec))
+        b.inputExec.setOnClickListener { pickExec() }
+    }
+
+    /** 执行身份：3 项不弹下拉，直接单选对话框，避免下拉控件点不开 */
+    private fun pickExec() {
         val labels = Task.EXECS.map { Task.execLabel(it) }.toTypedArray()
-        b.inputExec.setAdapter(ArrayAdapter(act, android.R.layout.simple_list_item_1, labels))
-        b.inputExec.setText(Task.execLabel(task.exec), false)
-        b.inputExec.setOnItemClickListener { _, _, pos, _ ->
-            exec = Task.EXECS[pos]
-            b.inputExec.setText(Task.execLabel(exec), false)
-        }
+        val idx = Task.EXECS.indexOf(exec).coerceAtLeast(0)
+        AlertDialog.Builder(act)
+            .setTitle("执行身份")
+            .setMessage("普通：本应用自身权限（绝大多数命令够用）\nShizuku：ADB shell 级权限，无需 root\nRoot：su 执行，需要设备已 root")
+            .setSingleChoiceItems(labels, idx) { d, which ->
+                exec = Task.EXECS[which]
+                b.inputExec.setText(Task.execLabel(exec))
+                d.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun setupFolder() {
-        val names = mutableListOf("（未分组）")
-        folders.forEach { names.add(it.name) }
-        names.add(NEW_FOLDER)
-        b.inputFolder.setAdapter(ArrayAdapter(act, android.R.layout.simple_list_item_1, names.toTypedArray()))
         val cur = folderId.ifBlank { task.folderId }
         val idx = folders.indexOfFirst { it.id == cur }
         folderId = if (idx >= 0) folders[idx].id else ""
-        b.inputFolder.setText(if (idx >= 0) folders[idx].name else "（未分组）", false)
-        b.inputFolder.setOnItemClickListener { _, _, pos, _ ->
-            when {
-                pos == 0 -> {
-                    folderId = ""
-                    b.inputFolder.setText("（未分组）", false)
-                }
-                pos == names.size - 1 -> askNewFolder()
-                else -> {
-                    folderId = folders[pos - 1].id
-                    b.inputFolder.setText(folders[pos - 1].name, false)
+        b.inputFolder.setText(if (idx >= 0) folders[idx].name else "（未分组）")
+        b.inputFolder.setOnClickListener { pickFolder() }
+    }
+
+    /** 文件夹：点击弹单选对话框（末项是新建文件夹） */
+    private fun pickFolder() {
+        val names = mutableListOf("（未分组）")
+        folders.forEach { names.add(it.name) }
+        names.add(NEW_FOLDER)
+        val sel = folders.indexOfFirst { it.id == folderId } + 1
+        AlertDialog.Builder(act)
+            .setTitle("文件夹")
+            .setSingleChoiceItems(names.toTypedArray(), if (sel < 0) 0 else sel) { d, pos ->
+                when {
+                    pos == 0 -> {
+                        folderId = ""
+                        b.inputFolder.setText("（未分组）")
+                        d.dismiss()
+                    }
+                    pos == names.size - 1 -> {
+                        d.dismiss()
+                        askNewFolder()
+                    }
+                    else -> {
+                        folderId = folders[pos - 1].id
+                        b.inputFolder.setText(folders[pos - 1].name)
+                        d.dismiss()
+                    }
                 }
             }
-        }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     /** 在新建任务的同时新建文件夹，建完自动选中 */
@@ -128,7 +153,7 @@ class TaskEditorDialog(
                 }
                 folderId = f.id
                 setupFolder()
-                b.inputFolder.setText(f.name, false)
+                b.inputFolder.setText(f.name)
                 Toast.makeText(act, "已创建并选中：" + f.name, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("取消", null)
@@ -145,7 +170,7 @@ class TaskEditorDialog(
         b.inputExtras.setText(task.extras)
         b.switchOutput.isChecked = task.showOutput
         b.inputTimeout.setText(task.timeoutSec.toString())
-        b.inputExec.setText(Task.execLabel(task.exec), false)
+        b.inputExec.setText(Task.execLabel(task.exec))
     }
 
     // ---------------- 类型联动 ----------------
