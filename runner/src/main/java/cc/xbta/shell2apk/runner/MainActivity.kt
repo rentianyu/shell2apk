@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
 import android.util.TypedValue
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -122,26 +123,41 @@ class MainActivity : Activity() {
     }
 
     private fun showOutputDialog(label: String, out: String, exit: Int) {
-        val density = resources.displayMetrics.density
+        val dm = resources.displayMetrics
+        val dp = { v: Int -> (v * dm.density).toInt() }
         val tv = TextView(this).apply {
             text = if (out.isEmpty()) "（无输出）" else out
             setTextIsSelectable(true)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(Color.parseColor("#E6E9EC"))
-            setPadding((16 * density).toInt(), (12 * density).toInt(), (16 * density).toInt(), (12 * density).toInt())
+            setPadding(dp(14), dp(10), dp(14), dp(10))
             movementMethod = ScrollingMovementMethod()
             typeface = android.graphics.Typeface.MONOSPACE
         }
         val sv = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#14191E"))
-            addView(tv, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(
+                tv,
+                ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
         }
-        AlertDialog.Builder(this)
+        val wrap = FrameLayout(this).apply {
+            setPadding(dp(12), dp(8), dp(12), 0)
+            addView(
+                sv,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    (dm.heightPixels * 0.55f).toInt()
+                )
+            )
+        }
+        val d = AlertDialog.Builder(this)
             .setTitle("$label  ·  exit=$exit")
-            .setView(sv, (12 * density).toInt(), (8 * density).toInt(), (12 * density).toInt(), 0)
+            .setView(wrap)
             .setPositiveButton("关闭") { _, _ -> finish() }
-            .setCancelable(false)
-            .show()
+            .create()
+        d.setCancelable(false)
+        d.show()
     }
 
     // ---------------- url ----------------

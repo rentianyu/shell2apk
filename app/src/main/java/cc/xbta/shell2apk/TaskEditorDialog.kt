@@ -82,8 +82,9 @@ class TaskEditorDialog(
                 else -> "Shell 命令（多行可写多行命令）"
             }
         )
-        b.inputValue.minLines = if (kind == Task.KIND_SHELL || kind == Task.KIND_INTENT) 3 else 1
-        b.inputValue.isSingleLine = !(kind == Task.KIND_SHELL || kind == Task.KIND_INTENT)
+        val multiline = kind == Task.KIND_SHELL || kind == Task.KIND_INTENT
+        b.inputValue.setMinLines(if (multiline) 3 else 1)
+        b.inputValue.setSingleLine(!multiline)
     }
 
     private fun collect(): Task {
