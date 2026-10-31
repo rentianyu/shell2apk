@@ -21,7 +21,18 @@ object IconGen {
         "xxxhdpi" to 192
     )
 
-    fun sizeFor(dpi: String): Int = DPI_SIZE[dpi] ?: 192
+    /** dir 可以是 "mipmap-mdpi"、"mdpi"、"mipmap-xxxhdpi-v4" 等 */
+    fun sizeFor(dir: String): Int {
+        val d = dir.substringAfter("mipmap-", dir).substringBefore("-v")
+        DPI_SIZE[d]?.let { return it }
+        return when {
+            d.contains("xxxhdpi") -> 192
+            d.contains("xxhdpi") -> 144
+            d.contains("xhdpi") -> 96
+            d.contains("hdpi") -> 72
+            else -> 48
+        }
+    }
 
     fun render(text: String, kind: String, px: Int): ByteArray {
         val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)

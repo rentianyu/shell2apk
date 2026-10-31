@@ -34,8 +34,20 @@ object ApkBuilder {
         val iconText = task.iconText.trim().ifBlank { label.take(1) }
 
         val result = ArrayList<ZipEntryData>(entries.size)
+        // 正常情况下按 res/mipmap-xxx/ic_launcher.png 匹配；
+        // 若模板被 AGP 做了资源路径缩短（res/9w.png 这种），退化成「按体积排序的 png」兜底。
+        val hasNamedIcon = entries.any { isIconEntry(it.name) }
+        val fallbackMap = HashMap<String, Int>()
+        if (!hasNamedIcon) {
+            val sizes = intArrayOf(48, 72, 96, 144, 192)
+            entries.filter { it.name.matches(Regex("^res/[^/]+\\.png$")) && !it.name.endsWith(".9.png") }
+                .sortedBy { it.data.size }
+                .forEachIndexed { i, en -> fallbackMap[en.name] = sizes[minOf(i, sizes.size - 1)] }
+        }
+
         for (e in entries) {
             val n = e.name
+            val fpx = fallbackMap[n]
             when {
                 n == "AndroidManifest.xml" -> {
                     val edited = AxmlEditor.replaceStrings(e.data, mapOf(TPL_PKG to pkg, TPL_LABEL to label))
@@ -49,10 +61,11 @@ object ApkBuilder {
                 n.startsWith("res/mipmap-anydpi") -> {
                     // 丢掉自适应图标 XML，避免遮住我们生成的 PNG
                 }
-                n.startsWith("res/mipmap-") && n.endsWith("/ic_launcher.png") -> {
-                    val dpi = n.removePrefix("res/mipmap-").substringBefore("/")
-                    result.add(ZipEntryData(n, 0, IconGen.render(iconText, task.kind, IconGen.sizeFor(dpi))))
+                isIconEntry(n) -> {
+                    val dir = n.substringBeforeLast("/")
+                    result.add(ZipEntryData(n, 0, IconGen.render(iconText, task.kind, IconGen.sizeFor(dir))))
                 }
+                fpx != null -> result.add(ZipEntryData(n, 0, IconGen.render(iconText, task.kind, fpx)))
                 else -> result.add(e)
             }
         }
@@ -63,12 +76,19 @@ object ApkBuilder {
         unsigned.delete()
     }
 
-    /** 生成固定 22 字符的唯一包名，与模板包名等长，便于 arsc 原地替换 */
+    /**
+     * 生成唯一包名，**长度必须与 TPL_PKG 完全一致（21 字符）**，
+     * 因为 resources.arsc 里的包名是按字节等长替换的。
+     * TPL_PKG = "cc.xbta.shell2apk.tpl" → 21；这里 "cc.xbta.s2a.a" (13) + 8 位 hex = 21。
+     */
     fun newPackageName(seed: String): String {
         val h = seed.replace("-", "").lowercase()
-        val hex = (h + "0000000000000").substring(0, 9)
+        val hex = (h + "00000000").substring(0, 8)
         return "cc.xbta.s2a.a$hex"
     }
+
+    private fun isIconEntry(n: String): Boolean =
+        n.startsWith("res/mipmap-") && n.endsWith("/ic_launcher.png")
 
     private fun isTemplateSignatureFile(n: String): Boolean {
         if (!n.startsWith("META-INF/")) return false
