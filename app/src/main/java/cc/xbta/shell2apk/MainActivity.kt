@@ -324,7 +324,16 @@ class MainActivity : AppCompatActivity() {
             } catch (t: Throwable) {
                 runOnUiThread {
                     pd.dismiss()
-                    showError("下载失败：" + (t.message ?: t.javaClass.simpleName) + "\n\n可到「更新设置」换个源再试。")
+                    AlertDialog.Builder(this)
+                        .setTitle("下载失败")
+                        .setMessage(
+                            (t.message ?: t.javaClass.simpleName) +
+                                "\n\n可以换个更新源再试，或用浏览器打开发布页手动下载。"
+                        )
+                        .setPositiveButton("打开发布页") { _, _ -> openUrl(rel.pageUrl) }
+                        .setNeutralButton("更新源") { _, _ -> showUpdateSourceDialog() }
+                        .setNegativeButton("关闭", null)
+                        .show()
                 }
             }
         }.apply { isDaemon = true }.start()
@@ -418,6 +427,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun uriOf(f: File): Uri =
         FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
+
+    private fun openUrl(url: String) {
+        try {
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(i)
+        } catch (t: Throwable) {
+            toast("打不开：$url")
+        }
+    }
 
     private fun install(f: File) {
         try {

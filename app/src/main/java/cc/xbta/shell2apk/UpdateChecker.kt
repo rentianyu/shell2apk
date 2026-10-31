@@ -7,7 +7,14 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * 自动更新：从 GitHub Release 查最新版本，按用户选的源（直链 / 代理 / 自定义前缀）改写地址。
+ * 自动更新：拿到最新版本号 → 按用户选的源（直链 / 代理 / 自定义前缀）拼下载地址。
+ *
+ * 两条通道：
+ *  1. 主通道：抓 releases/latest 页面的 HTML，正则提 tag（不吃 GitHub API 的 60 次/小时限流；
+ *     实测 p.xbta.cc 代理会跟随 302 并返回页面，页面里带 /releases/tag/vX.Y.Z）。
+ *  2. 兜底：GitHub API /releases/latest（去拿 assets 里的真实下载地址）。
+ *
+ * 下载文件名约定：shell2apk-<versionName>.apk（CI 里固定，改名会破坏自动更新）。
  */
 object UpdateChecker {
 
@@ -45,7 +52,7 @@ object UpdateChecker {
     fun sourceLabel(ctx: Context): String = when (source(ctx)) {
         SOURCE_DIRECT -> "GitHub 直链"
         SOURCE_CUSTOM -> "自定义：" + customPrefix(ctx)
-        else -> "GitHub 代理"
+        else -> "GitHub 代理（p.xbta.cc）"
     }
 
     /** 把 GitHub 原始地址按当前源改写 */
@@ -65,9 +72,44 @@ object UpdateChecker {
     }
 
     fun check(ctx: Context): Release {
+        var first: Throwable? = null
+        try {
+            return checkByPage(ctx)
+        } catch (t: Throwable) {
+            first = t
+        }
+        try {
+            return checkByApi(ctx)
+        } catch (t: Throwable) {
+            throw IllegalStateException(
+                "页面通道：" + (first?.message ?: "?") + "；API 通道：" + (t.message ?: "?")
+            )
+        }
+    }
+
+    /** 主通道：releases/latest 页面 → 提 tag */
+    private fun checkByPage(ctx: Context): Release {
+        val pageUrl = "https://github.com/$REPO/releases/latest"
+        val html = httpGet(wrap(ctx, pageUrl), "text/html")
+        val m = Regex("/releases/tag/([A-Za-z0-9._-]+)").find(html)
+            ?: throw IllegalStateException("页面里没找到 release tag")
+        val tag = m.groupValues[1]
+        val ver = tag.removePrefix("v")
+        if (ver.isBlank()) throw IllegalStateException("tag 解析失败")
+        val dl = "https://github.com/$REPO/releases/download/$tag/shell2apk-$ver.apk"
+        return Release(
+            tag = tag,
+            versionName = ver,
+            downloadUrl = wrap(ctx, dl),
+            pageUrl = wrap(ctx, "https://github.com/$REPO/releases/tag/$tag"),
+            size = 0
+        )
+    }
+
+    /** 兜底通道：GitHub API */
+    private fun checkByApi(ctx: Context): Release {
         val api = "https://api.github.com/repos/$REPO/releases/latest"
-        val json = httpGet(wrap(ctx, api))
-        val o = JSONObject(json)
+        val o = JSONObject(httpGet(wrap(ctx, api), "application/vnd.github+json"))
         val tag = o.optString("tag_name", "")
         if (tag.isBlank()) throw IllegalStateException("没有取到 tag_name")
         var url = ""
@@ -88,7 +130,7 @@ object UpdateChecker {
             tag = tag,
             versionName = tag.removePrefix("v"),
             downloadUrl = wrap(ctx, url),
-            pageUrl = o.optString("html_url", "https://github.com/$REPO/releases"),
+            pageUrl = wrap(ctx, "https://github.com/$REPO/releases"),
             size = size
         )
     }
@@ -134,13 +176,13 @@ object UpdateChecker {
         }
     }
 
-    private fun httpGet(url: String): String {
+    private fun httpGet(url: String, accept: String): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 15000
         conn.readTimeout = 25000
         conn.instanceFollowRedirects = true
-        conn.setRequestProperty("Accept", "application/vnd.github+json")
-        conn.setRequestProperty("User-Agent", "Shell2APK-Android")
+        conn.setRequestProperty("Accept", accept)
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Shell2APK")
         try {
             val code = conn.responseCode
             if (code !in 200..299) throw IllegalStateException("HTTP $code")
