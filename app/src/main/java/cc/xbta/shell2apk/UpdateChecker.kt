@@ -46,7 +46,7 @@ object UpdateChecker {
 
     private const val REPO = "rentianyu/shell2apk"
     private const val SP = "shell2apk"
-    private const val CHECK_TIMEOUT_SEC = 22L
+    private const val CHECK_TIMEOUT_SEC = 26L
 
     data class Release(
         val tag: String,
@@ -105,36 +105,33 @@ object UpdateChecker {
         "0"
     }
 
+    const val CH_PAGE = 0
+    const val CH_API = 1
+
     fun check(ctx: Context): Release {
         val list = bases(ctx)
-        var pageErr: Throwable? = null
-        try {
-            return race(list) { b -> checkByPage(ctx, b) }
-        } catch (t: Throwable) {
-            pageErr = t
-        }
-        try {
-            return race(list) { b -> checkByApi(ctx, b) }
-        } catch (t: Throwable) {
-            throw IllegalStateException(
-                "页面通道失败：" + (pageErr?.message ?: "?") + "\nAPI 通道失败：" + (t.message ?: "?")
-            )
-        }
+        // 页面通道与 API 通道**同时**并发：页面体积大（150KB+）怕慢，
+        // API 只有几 KB，某些只代理资源的线路（gh-proxy.com）反而 API 飞快。
+        val combos = ArrayList<Pair<Int, String>>()
+        for (b in list) combos.add(CH_PAGE to b)
+        for (b in list) combos.add(CH_API to b)
+        return race(ctx, combos)
     }
 
-    /** 并发跑同一动作，先成功者胜；全失败则抛错 */
-    private fun race(list: List<String>, fn: (String) -> Release): Release {
+    /** 并发跑「通道×线路」全组合，先成功者胜；全失败则抛错 */
+    private fun race(ctx: Context, combos: List<Pair<Int, String>>): Release {
         val latch = CountDownLatch(1)
         val ok = AtomicReference<Release>()
         val errs = Collections.synchronizedList(ArrayList<String>())
-        val pending = AtomicInteger(list.size)
-        for (b in list) {
+        val pending = AtomicInteger(combos.size)
+        for ((kind, b) in combos) {
             Thread {
                 try {
-                    val r = fn(b)
+                    val r = if (kind == CH_PAGE) checkByPage(ctx, b) else checkByApi(ctx, b)
                     if (ok.compareAndSet(null, r)) latch.countDown()
                 } catch (t: Throwable) {
-                    errs.add(label(b) + "：" + (t.message ?: t.javaClass.simpleName))
+                    val cn = if (kind == CH_PAGE) "页面" else "API"
+                    errs.add(cn + "·" + label(b) + "：" + (t.message ?: t.javaClass.simpleName))
                 } finally {
                     if (pending.decrementAndGet() == 0) latch.countDown()
                 }
