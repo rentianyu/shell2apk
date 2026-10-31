@@ -79,23 +79,30 @@ class TaskEditorDialog(
 
     private fun setupExec() {
         b.inputExec.setText(Task.execLabel(exec))
-        b.inputExec.setOnClickListener { pickExec() }
+        b.rowExec.setOnClickListener { pickExec() }
     }
 
-    /** 执行身份：3 项不弹下拉，直接单选对话框，避免下拉控件点不开 */
+    /**
+     * 执行身份：单选对话框。
+     * 不设 message（message 会和列表抢空间，某些机型上列表项点不动），说明并入选项文字。
+     */
     private fun pickExec() {
-        val labels = Task.EXECS.map { Task.execLabel(it) }.toTypedArray()
+        val labels = arrayOf(
+            "普通 — 本应用自身权限",
+            "Shizuku — ADB 权限（无需 root）",
+            "Root — su（需设备已 root）"
+        )
         val idx = Task.EXECS.indexOf(exec).coerceAtLeast(0)
-        AlertDialog.Builder(act)
+        val d = AlertDialog.Builder(act)
             .setTitle("执行身份")
-            .setMessage("普通：本应用自身权限（绝大多数命令够用）\nShizuku：ADB shell 级权限，无需 root\nRoot：su 执行，需要设备已 root")
-            .setSingleChoiceItems(labels, idx) { d, which ->
+            .setSingleChoiceItems(labels, idx) { dd, which ->
                 exec = Task.EXECS[which]
                 b.inputExec.setText(Task.execLabel(exec))
-                d.dismiss()
+                dd.dismiss()
             }
             .setNegativeButton("取消", null)
-            .show()
+            .create()
+        d.show()
     }
 
     private fun setupFolder() {
@@ -103,7 +110,7 @@ class TaskEditorDialog(
         val idx = folders.indexOfFirst { it.id == cur }
         folderId = if (idx >= 0) folders[idx].id else ""
         b.inputFolder.setText(if (idx >= 0) folders[idx].name else "（未分组）")
-        b.inputFolder.setOnClickListener { pickFolder() }
+        b.rowFolder.setOnClickListener { pickFolder() }
     }
 
     /** 文件夹：点击弹单选对话框（末项是新建文件夹） */
