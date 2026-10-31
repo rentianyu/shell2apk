@@ -4,8 +4,20 @@
     <item
         android:id="@+id/action_new"
         android:icon="@drawable/ic_add"
-        android:title="新建"
+        android:title="新建任务"
         app:showAsAction="always" />
+    <item
+        android:id="@+id/action_new_folder"
+        android:title="新建文件夹"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_update"
+        android:title="检查更新"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_update_source"
+        android:title="更新源设置"
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_about"
         android:title="使用说明"

@@ -13,36 +13,56 @@ import java.util.concurrent.TimeUnit
 object ExecEngine {
 
     fun run(ctx: Activity, task: Task, onDone: (String) -> Unit) {
-        when (task.kind) {
-            Task.KIND_URL -> {
-                try {
+        try {
+            when (task.kind) {
+                Task.KIND_URL -> {
                     openUrl(ctx, task.value)
                     onDone("已发送打开请求")
-                } catch (t: Throwable) {
-                    onDone("失败: " + (t.message ?: t.javaClass.simpleName))
                 }
-            }
-            Task.KIND_APP -> {
-                try {
-                    val i = ctx.packageManager.getLaunchIntentForPackage(task.value.trim())
-                    if (i == null) onDone("未找到应用：" + task.value) else {
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        ctx.startActivity(i)
-                        onDone("已启动")
-                    }
-                } catch (t: Throwable) {
-                    onDone("失败: " + (t.message ?: t.javaClass.simpleName))
-                }
-            }
-            Task.KIND_INTENT -> {
-                try {
+                Task.KIND_ACTIVITY -> onDone(startActivitySpec(ctx, task.value))
+                Task.KIND_INTENT -> {
                     fireIntent(ctx, task)
                     onDone("已发送 Intent")
-                } catch (t: Throwable) {
-                    onDone("失败: " + (t.message ?: t.javaClass.simpleName))
+                }
+                Task.KIND_BROADCAST -> {
+                    fireBroadcast(ctx, task)
+                    onDone("已发送广播")
+                }
+                else -> shell(task, onDone)
+            }
+        } catch (t: Throwable) {
+            onDone("失败：" + (t.message ?: t.javaClass.simpleName))
+        }
+    }
+
+    // ---------------- helpers ----------------
+
+    fun componentOf(spec: String): ComponentName? {
+        val s = spec.trim()
+        if (s.isEmpty() || !s.contains("/")) return null
+        val p = s.substringBefore("/").trim()
+        var c = s.substringAfter("/").trim()
+        if (p.isEmpty() || c.isEmpty()) return null
+        if (c.startsWith(".")) c = p + c
+        return ComponentName(p, c)
+    }
+
+    fun putExtras(intent: Intent, extrasRaw: String) {
+        if (extrasRaw.isBlank()) return
+        try {
+            val obj = JSONObject(extrasRaw)
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                when (val v = obj.get(k)) {
+                    is Boolean -> intent.putExtra(k, v)
+                    is Int -> intent.putExtra(k, v)
+                    is Long -> intent.putExtra(k, v)
+                    is Double -> intent.putExtra(k, v)
+                    else -> intent.putExtra(k, v.toString())
                 }
             }
-            else -> shell(task, onDone)
+        } catch (ignored: Throwable) {
         }
     }
 
@@ -56,36 +76,42 @@ object ExecEngine {
         ctx.startActivity(i)
     }
 
+    /** value 支持两种写法："包名/类名"（启动指定 Activity）或 "包名"（启动默认入口） */
+    private fun startActivitySpec(ctx: Activity, spec: String): String {
+        val s = spec.trim()
+        if (s.isEmpty()) return "未选择活动"
+        val cn = componentOf(s)
+        val i = if (cn != null) Intent().setComponent(cn)
+        else ctx.packageManager.getLaunchIntentForPackage(s)
+        if (i == null) return "未找到：$s"
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ctx.startActivity(i)
+        return "已启动 " + (cn?.flattenToShortString() ?: s)
+    }
+
     private fun fireIntent(ctx: Activity, task: Task) {
         val i = Intent()
         if (task.action.isNotBlank()) i.action = task.action.trim()
         val uri = task.value.trim()
         if (uri.isNotBlank()) i.data = Uri.parse(uri)
-        if (task.component.isNotBlank()) {
-            val p = task.component.substringBefore("/")
-            var c = task.component.substringAfter("/", "")
-            if (c.startsWith(".")) c = p + c
-            if (c.isNotEmpty()) i.component = ComponentName(p, c)
+        val cn = componentOf(task.component)
+        if (cn != null) {
+            i.component = cn
+        } else if (task.component.isNotBlank()) {
+            i.setPackage(task.component.trim())
         }
-        if (task.extras.isNotBlank()) {
-            try {
-                val obj = JSONObject(task.extras)
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    when (val v = obj.get(k)) {
-                        is Boolean -> i.putExtra(k, v)
-                        is Int -> i.putExtra(k, v)
-                        is Long -> i.putExtra(k, v)
-                        is Double -> i.putExtra(k, v)
-                        else -> i.putExtra(k, v.toString())
-                    }
-                }
-            } catch (ignored: Throwable) {
-            }
-        }
+        putExtras(i, task.extras)
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         ctx.startActivity(i)
+    }
+
+    private fun fireBroadcast(ctx: Activity, task: Task) {
+        val action = task.action.trim()
+        require(action.isNotEmpty()) { "广播需要填 action" }
+        val i = Intent(action)
+        if (task.component.isNotBlank()) i.setPackage(task.component.trim())
+        putExtras(i, task.extras)
+        ctx.sendBroadcast(i)
     }
 
     private fun shell(task: Task, onDone: (String) -> Unit) {

@@ -44,11 +44,14 @@ object IconGen {
             Task.KIND_URL -> {
                 top = 0xFF10294A.toInt(); bottom = 0xFF071222.toInt(); fg = 0xFF62B6FF.toInt()
             }
-            Task.KIND_APP -> {
+            Task.KIND_ACTIVITY -> {
                 top = 0xFF2A1B45.toInt(); bottom = 0xFF140C22.toInt(); fg = 0xFFB79BFF.toInt()
             }
             Task.KIND_INTENT -> {
                 top = 0xFF3A2410.toInt(); bottom = 0xFF1A0F06.toInt(); fg = 0xFFFFB454.toInt()
+            }
+            Task.KIND_BROADCAST -> {
+                top = 0xFF3B1418.toInt(); bottom = 0xFF1B090B.toInt(); fg = 0xFFFF8A8A.toInt()
             }
             else -> {
                 top = 0xFF0F3B2A.toInt(); bottom = 0xFF071A12.toInt(); fg = 0xFF4CDE80.toInt()

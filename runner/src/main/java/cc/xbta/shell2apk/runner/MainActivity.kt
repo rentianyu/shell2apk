@@ -35,12 +35,16 @@ class MainActivity : Activity() {
                     openUrl(cfg.optString("value"))
                     finish()
                 }
-                "app" -> {
-                    openApp(cfg.optString("value"))
+                "app", "activity" -> {
+                    startActivitySpec(cfg.optString("value"))
                     finish()
                 }
                 "intent" -> {
                     fireIntent(cfg)
+                    finish()
+                }
+                "broadcast" -> {
+                    fireBroadcast(cfg)
                     finish()
                 }
                 "none" -> finish()
@@ -176,21 +180,45 @@ class MainActivity : Activity() {
         startActivity(i)
     }
 
-    // ---------------- app ----------------
+    // ---------------- activity ----------------
 
-    private fun openApp(pkg: String) {
-        val p = pkg.trim()
-        if (p.isEmpty()) {
-            toast("未配置包名")
+    /** value 支持 "包名/类名"（指定 Activity）或 "包名"（默认入口） */
+    private fun startActivitySpec(spec0: String) {
+        val s = spec0.trim()
+        if (s.isEmpty()) {
+            toast("未配置活动")
             return
         }
-        val i = packageManager.getLaunchIntentForPackage(p)
-        if (i == null) {
-            toast("未找到应用：$p")
+        val i: Intent? = if (s.contains("/")) {
+            val p = s.substringBefore("/").trim()
+            var c = s.substringAfter("/").trim()
+            if (c.startsWith(".")) c = p + c
+            if (p.isEmpty() || c.isEmpty()) null else Intent().setComponent(ComponentName(p, c))
         } else {
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(i)
+            packageManager.getLaunchIntentForPackage(s)
         }
+        if (i == null) {
+            toast("未找到：$s")
+            return
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(i)
+    }
+
+    // ---------------- broadcast ----------------
+
+    private fun fireBroadcast(cfg: JSONObject) {
+        val action = cfg.optString("action", "").trim()
+        if (action.isEmpty()) {
+            toast("未配置广播 action")
+            return
+        }
+        val i = Intent(action)
+        val pkg = cfg.optString("component", "").trim()
+        if (pkg.isNotEmpty()) i.setPackage(pkg)
+        putExtras(i, cfg.optString("extras", ""))
+        sendBroadcast(i)
+        toast("广播已发送")
     }
 
     // ---------------- intent ----------------
@@ -201,51 +229,50 @@ class MainActivity : Activity() {
         if (action.isNotEmpty()) i.action = action
         val uri = cfg.optString("uri", cfg.optString("value", "")).trim()
         if (uri.isNotEmpty()) i.data = Uri.parse(uri)
-        val type = cfg.optString("mimeType", "").trim()
-        if (type.isNotEmpty() && uri.isNotEmpty()) i.setDataAndType(Uri.parse(uri), type)
 
         val component = cfg.optString("component", "").trim()
-        if (component.isNotEmpty()) {
-            val sep = if (component.contains("/")) "/" else null
-            if (sep != null) {
-                val p = component.substringBefore("/")
-                var c = component.substringAfter("/")
-                if (c.startsWith(".")) c = p + c
-                i.component = ComponentName(p, c)
-            }
+        if (component.contains("/")) {
+            val p = component.substringBefore("/").trim()
+            var c = component.substringAfter("/").trim()
+            if (c.startsWith(".")) c = p + c
+            if (p.isNotEmpty() && c.isNotEmpty()) i.component = ComponentName(p, c)
+        } else if (component.isNotEmpty()) {
+            i.setPackage(component)
         }
-        val pkg = cfg.optString("package", "").trim()
-        if (pkg.isNotEmpty() && i.component == null) i.setPackage(pkg)
 
-        val extrasRaw = cfg.optString("extras", "").trim()
-        if (extrasRaw.isNotEmpty()) {
-            try {
-                val obj = JSONObject(extrasRaw)
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    when (val v = obj.get(k)) {
-                        is Boolean -> i.putExtra(k, v)
-                        is Int -> i.putExtra(k, v)
-                        is Long -> i.putExtra(k, v)
-                        is Double -> i.putExtra(k, v)
-                        else -> {
-                            val s = v.toString()
-                            when {
-                                s.startsWith("i:") -> i.putExtra(k, s.substring(2).toInt())
-                                s.startsWith("l:") -> i.putExtra(k, s.substring(2).toLong())
-                                s.startsWith("b:") -> i.putExtra(k, s.substring(2).toBoolean())
-                                s.startsWith("f:") -> i.putExtra(k, s.substring(2).toFloat())
-                                else -> i.putExtra(k, s)
-                            }
+        putExtras(i, cfg.optString("extras", ""))
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(i)
+    }
+
+    /** extras 支持 JSON 对象；字符串可用 i:/l:/b:/f: 前缀强制类型 */
+    private fun putExtras(intent: Intent, extrasRaw0: String) {
+        val extrasRaw = extrasRaw0.trim()
+        if (extrasRaw.isEmpty()) return
+        try {
+            val obj = JSONObject(extrasRaw)
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                when (val v = obj.get(k)) {
+                    is Boolean -> intent.putExtra(k, v)
+                    is Int -> intent.putExtra(k, v)
+                    is Long -> intent.putExtra(k, v)
+                    is Double -> intent.putExtra(k, v)
+                    else -> {
+                        val s = v.toString()
+                        when {
+                            s.startsWith("i:") -> intent.putExtra(k, s.substring(2).toInt())
+                            s.startsWith("l:") -> intent.putExtra(k, s.substring(2).toLong())
+                            s.startsWith("b:") -> intent.putExtra(k, s.substring(2).toBoolean())
+                            s.startsWith("f:") -> intent.putExtra(k, s.substring(2).toFloat())
+                            else -> intent.putExtra(k, s)
                         }
                     }
                 }
-            } catch (ignored: Throwable) {
             }
+        } catch (ignored: Throwable) {
         }
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(i)
     }
 
     // ---------------- helper ----------------

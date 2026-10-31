@@ -12,11 +12,14 @@
 |---|---|---|
 | Shell 命令 | 用 `/system/bin/sh -c` 执行命令，可回显输出 | `getprop ro.build.version.release` |
 | 链接 | 打开 URL 或任意 URL Scheme | `https://example.com`、`weixin://`、`intent://…` |
-| 应用 | 按包名启动已安装的应用 | `com.tencent.mm` |
+| 活动 | 启动指定 App 的某个 Activity | `com.tencent.mm/.ui.LauncherUI`（可从已装应用里选） |
 | Intent | 自定义 action / component / uri / extras | `android.intent.action.VIEW` |
+| 广播 | 发送广播，action 必填、可指定目标包名 | `com.example.ACTION_DO` |
 
 - 每个任务生成一个独立 APK，包名可自定义（留空则自动分配），互不冲突
 - 图标按动作类型着色，可自定义 1 个字符
+- 首页支持文件夹分组，任务可归到文件夹里
+- App 内自动更新，更新源可选 GitHub 直链 / GitHub 代理 / 自定义代理前缀
 - 生成的 APK 与生成器同签名，可直接覆盖升级
 - 生成器自带「试运行」，先在当前 App 里验证动作再打包
 
@@ -41,6 +44,9 @@
 ```
 runner 模板 → 塞进 app assets → 生成器 App → 上传 Release
 ```
+
+Release 里只放生成器一个 APK，文件名带版本号：`shell2apk-v1.0.<run_number>.apk`。
+App 内自动更新通过 GitHub Release API 取最新版本与 asset 地址，所以文件名带版本号不影响更新。
 
 本地构建需要 JDK 17 + Android SDK 36：
 

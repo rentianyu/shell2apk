@@ -1,10 +1,11 @@
 package cc.xbta.shell2apk
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.text.method.ScrollingMovementMethod
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import cc.xbta.shell2apk.databinding.DialogTaskBinding
@@ -13,30 +14,31 @@ import cc.xbta.shell2apk.databinding.DialogTaskBinding
 class TaskEditorDialog(
     private val act: AppCompatActivity,
     original: Task,
+    private val folders: List<Folder>,
     private val onSaved: (Task) -> Unit
 ) {
 
     private val task = original.copy()
     private val b: DialogTaskBinding
     private val dlg: AlertDialog
+    private var kind: String = task.kind
+    private var folderId: String = task.folderId
 
     init {
         val view = LayoutInflater.from(act).inflate(R.layout.dialog_task, null)
         b = DialogTaskBinding.bind(view)
         dlg = AlertDialog.Builder(act).setView(view).create()
+
+        setupKind()
+        setupFolder()
         bindValues()
-        b.groupKind.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (isChecked) applyKind(kindOf(checkedId))
-        }
-        b.kindShell.isChecked = task.kind == Task.KIND_SHELL
-        b.kindUrl.isChecked = task.kind == Task.KIND_URL
-        b.kindApp.isChecked = task.kind == Task.KIND_APP
-        b.kindIntent.isChecked = task.kind == Task.KIND_INTENT
-        applyKind(task.kind)
 
         b.btnCancel.setOnClickListener { dlg.dismiss() }
         b.btnTest.setOnClickListener { runTest() }
         b.btnBuild.setOnClickListener { save() }
+        b.btnPickActivity.setOnClickListener {
+            AppPicker.pick(act) { spec -> b.inputValue.setText(spec) }
+        }
 
         dlg.setOnShowListener {
             val dm = act.resources.displayMetrics
@@ -45,6 +47,31 @@ class TaskEditorDialog(
     }
 
     fun show() = dlg.show()
+
+    // ---------------- 下拉 ----------------
+
+    private fun setupKind() {
+        val labels = Task.KINDS.map { Task.kindLabel(it) }.toTypedArray()
+        b.inputKind.setAdapter(ArrayAdapter(act, android.R.layout.simple_list_item_1, labels))
+        b.inputKind.setText(Task.kindLabel(task.kind), false)
+        b.inputKind.setOnItemClickListener { _, _, pos, _ ->
+            applyKind(Task.KINDS[pos])
+        }
+        applyKind(task.kind)
+    }
+
+    private fun setupFolder() {
+        val names = mutableListOf("（未分组）")
+        folders.forEach { names.add(it.name) }
+        b.inputFolder.setAdapter(ArrayAdapter(act, android.R.layout.simple_list_item_1, names.toTypedArray()))
+        val idx = folders.indexOfFirst { it.id == task.folderId }
+        folderId = if (idx >= 0) folders[idx].id else ""
+        b.inputFolder.setText(if (idx >= 0) folders[idx].name else "（未分组）", false)
+        b.inputFolder.setOnItemClickListener { _, _, pos, _ ->
+            folderId = if (pos == 0) "" else folders[pos - 1].id
+            b.inputFolder.setText(if (pos == 0) "（未分组）" else folders[pos - 1].name, false)
+        }
+    }
 
     private fun bindValues() {
         b.inputName.setText(task.name)
@@ -58,41 +85,43 @@ class TaskEditorDialog(
         b.inputTimeout.setText(task.timeoutSec.toString())
     }
 
-    private fun kindOf(id: Int): String = when (id) {
-        R.id.kindUrl -> Task.KIND_URL
-        R.id.kindApp -> Task.KIND_APP
-        R.id.kindIntent -> Task.KIND_INTENT
-        else -> Task.KIND_SHELL
-    }
+    // ---------------- 类型联动 ----------------
 
-    private fun currentKind(): String = when {
-        b.kindUrl.isChecked -> Task.KIND_URL
-        b.kindApp.isChecked -> Task.KIND_APP
-        b.kindIntent.isChecked -> Task.KIND_INTENT
-        else -> Task.KIND_SHELL
-    }
+    private fun applyKind(k: String) {
+        kind = k
+        val isShell = k == Task.KIND_SHELL
+        val isAdv = k == Task.KIND_INTENT || k == Task.KIND_BROADCAST
+        val isCast = k == Task.KIND_BROADCAST
 
-    private fun applyKind(kind: String) {
-        b.groupShell.visibility = if (kind == Task.KIND_SHELL) android.view.View.VISIBLE else android.view.View.GONE
-        b.groupIntent.visibility = if (kind == Task.KIND_INTENT) android.view.View.VISIBLE else android.view.View.GONE
+        b.groupShell.visibility = if (isShell) View.VISIBLE else View.GONE
+        b.groupIntent.visibility = if (isAdv) View.VISIBLE else View.GONE
+        b.btnPickActivity.visibility = if (k == Task.KIND_ACTIVITY) View.VISIBLE else View.GONE
+        b.layoutValue.visibility = if (isCast) View.GONE else View.VISIBLE
+
         b.layoutValue.setHint(
-            when (kind) {
-                Task.KIND_URL -> "URL / URL Scheme（如 https://… 或 weixin://）"
-                Task.KIND_APP -> "应用包名（如 com.tencent.mm）"
-                Task.KIND_INTENT -> "uri（可留空，如 tel:10086）"
-                else -> "Shell 命令（多行可写多行命令）"
+            when (k) {
+                Task.KIND_URL -> "URL / URL Scheme（https://… 或 weixin://）"
+                Task.KIND_ACTIVITY -> "活动：包名/类名（可点下面按钮选择）"
+                Task.KIND_INTENT -> "uri（可留空）"
+                else -> "Shell 命令（可多行）"
             }
         )
-        val multiline = kind == Task.KIND_SHELL || kind == Task.KIND_INTENT
-        b.inputValue.setMinLines(if (multiline) 3 else 1)
-        b.inputValue.setSingleLine(!multiline)
+        b.layoutAction.setHint(if (isCast) "广播 action（必填）" else "action（如 android.intent.action.VIEW）")
+        b.layoutComponent.setHint(if (isCast) "目标包名（可选）" else "component（包名/类名）")
+
+        b.inputValue.setMinLines(if (isShell) 3 else 1)
+        b.inputValue.setSingleLine(!isShell)
+        b.inputKind.setText(Task.kindLabel(k), false)
     }
+
+    // ---------------- 取值 ----------------
 
     private fun collect(): Task {
         task.name = b.inputName.text?.toString()?.trim() ?: ""
         task.packageName = b.inputPackage.text?.toString()?.trim() ?: ""
         task.iconText = b.inputIcon.text?.toString()?.trim() ?: ""
-        task.kind = currentKind()
+        task.kind = kind
+        task.folderId = folderId
         task.value = b.inputValue.text?.toString() ?: ""
         task.action = b.inputAction.text?.toString()?.trim() ?: ""
         task.component = b.inputComponent.text?.toString()?.trim() ?: ""
@@ -102,34 +131,52 @@ class TaskEditorDialog(
         return task
     }
 
-    private fun save() {
-        val t = collect()
+    private fun validate(t: Task): Boolean {
         if (t.name.isBlank()) {
             b.layoutName.error = "请填写名称"
-            return
+            return false
         }
         if (t.packageName.isNotBlank()) {
             val err = cc.xbta.shell2apk.apk.ApkBuilder.validatePackage(t.packageName)
             if (err != null) {
                 b.layoutPackage.error = err
-                return
+                return false
             }
         }
         b.layoutPackage.error = null
-        if (t.kind != Task.KIND_INTENT && t.value.isBlank()) {
-            b.layoutValue.error = "请填写内容"
-            return
+        return when (t.kind) {
+            Task.KIND_BROADCAST -> {
+                if (t.action.isBlank()) {
+                    b.layoutAction.error = "广播必须填 action"
+                    false
+                } else true
+            }
+            Task.KIND_ACTIVITY -> {
+                if (t.value.isBlank()) {
+                    b.layoutValue.error = "请选择或填写活动"
+                    false
+                } else true
+            }
+            Task.KIND_INTENT -> true
+            else -> {
+                if (t.value.isBlank()) {
+                    b.layoutValue.error = "请填写内容"
+                    false
+                } else true
+            }
         }
+    }
+
+    private fun save() {
+        val t = collect()
+        if (!validate(t)) return
         onSaved(t)
         dlg.dismiss()
     }
 
     private fun runTest() {
         val t = collect()
-        if (t.kind != Task.KIND_INTENT && t.value.isBlank()) {
-            b.layoutValue.error = "内容为空，无法试运行"
-            return
-        }
+        if (!validate(t)) return
         ExecEngine.run(act, t) { result ->
             act.runOnUiThread {
                 val tv = TextView(act).apply {

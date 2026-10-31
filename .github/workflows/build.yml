@@ -95,12 +95,9 @@ jobs:
           mkdir -p dist
           APK="$(find app/build/outputs/apk/release -name '*.apk' | head -1)"
           echo "app apk: $APK"
-          cp "$APK" dist/shell2apk.apk
           cp "$APK" "dist/shell2apk-v1.0.${GITHUB_RUN_NUMBER}.apk"
-          TPL="$(find runner/build/outputs/apk/release -name '*.apk' | head -1)"
-          cp "$TPL" dist/runner-template.apk
           ls -l dist
-          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs dist/shell2apk.apk || true
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "dist/shell2apk-v1.0.${GITHUB_RUN_NUMBER}.apk" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -118,15 +115,14 @@ jobs:
           body: |
             Shell2APK —— 用手机自己生成「点一下执行某个动作」的 APK。
 
-            **下载：`shell2apk.apk`**（生成器本体，装这个）
+            **下载：`shell2apk-v1.0.${{ github.run_number }}.apk`**（生成器本体，装这个）
 
             功能：
-            - Shell 命令 / URL Scheme / 启动应用 / 自定义 Intent 四类动作
-            - 每个任务生成一个独立 APK（独立包名、独立图标、独立名称）
-            - 生成的 APK 与本 App 同签名，可直接覆盖升级
+            - 动作类型：Shell 命令 / 打开链接 / 启动活动 / 发送 Intent / 发送广播
+            - 每个任务生成一个独立 APK（包名可自定义、图标可自定义、名称独立）
+            - 首页支持文件夹分组
+            - App 内自动更新（更新源可选 GitHub 直链 / 代理 / 自定义前缀）
 
             build: ${{ github.run_number }} · ${{ github.sha }}
           files: |
-            dist/shell2apk.apk
             dist/shell2apk-v1.0.${{ github.run_number }}.apk
-            dist/runner-template.apk
