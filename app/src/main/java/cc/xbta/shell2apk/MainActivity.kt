@@ -296,7 +296,7 @@ class MainActivity : AppCompatActivity() {
         val mb = if (rel.size > 0) String.format("%.1f MB", rel.size / 1024.0 / 1024.0) else "未知大小"
         AlertDialog.Builder(this)
             .setTitle("更新到 ${rel.versionName}")
-            .setMessage("来源：${UpdateChecker.sourceLabel(this)}\n大小：$mb\n\n下载完成后会调起系统安装器，覆盖安装即可。")
+            .setMessage("线路：${rel.via}\n源：${UpdateChecker.sourceLabel(this)}\n大小：$mb\n\n下载完成后会调起系统安装器，覆盖安装即可。")
             .setPositiveButton("下载") { _, _ -> downloadAndInstall(rel) }
             .setNeutralButton("更新源") { _, _ -> showUpdateSourceDialog() }
             .setNegativeButton("取消", null)
@@ -314,7 +314,7 @@ class MainActivity : AppCompatActivity() {
                 val dir = File(cacheDir, "update").apply { mkdirs() }
                 val f = File(dir, "shell2apk-${rel.versionName}.apk")
                 if (f.exists()) f.delete()
-                UpdateChecker.download(rel.downloadUrl, f) { p ->
+                UpdateChecker.downloadFirst(listOf(rel.downloadUrl) + rel.altUrls, f) { p ->
                     runOnUiThread { pd.setMessage("正在下载… $p%") }
                 }
                 runOnUiThread {
@@ -328,7 +328,7 @@ class MainActivity : AppCompatActivity() {
                         .setTitle("下载失败")
                         .setMessage(
                             (t.message ?: t.javaClass.simpleName) +
-                                "\n\n可以换个更新源再试，或用浏览器打开发布页手动下载。"
+                                "\n\n已自动试过所有内置线路。可以换个更新源再试，或用浏览器打开发布页手动下载。"
                         )
                         .setPositiveButton("打开发布页") { _, _ -> openUrl(rel.pageUrl) }
                         .setNeutralButton("更新源") { _, _ -> showUpdateSourceDialog() }
@@ -340,8 +340,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showUpdateSourceDialog() {
+        val pool = UpdateChecker.BUILTIN_PROXIES.joinToString("\n") { " · " + it.replace("https://", "") }
         val labels = arrayOf(
-            "GitHub 代理（p.xbta.cc，国内直连）",
+            "自动：内置线路依次尝试（推荐）",
             "GitHub 直链（需能直连 GitHub）",
             "自定义代理前缀"
         )
@@ -352,11 +353,12 @@ class MainActivity : AppCompatActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("更新源")
+            .setMessage("内置线路池：\n" + pool + "\n · 以上都失败时走 GitHub 直链")
             .setSingleChoiceItems(labels, cur) { d, which ->
                 when (which) {
                     0 -> {
-                        UpdateChecker.setSource(this, UpdateChecker.SOURCE_PROXY, UpdateChecker.DEFAULT_PROXY)
-                        toast("已切到 GitHub 代理")
+                        UpdateChecker.setSource(this, UpdateChecker.SOURCE_AUTO, "")
+                        toast("已切到自动线路")
                         d.dismiss()
                     }
                     1 -> {
@@ -384,7 +386,7 @@ class MainActivity : AppCompatActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle("自定义代理前缀")
-            .setMessage("把 GitHub 地址拼在这个前缀后面，例如 https://ghproxy.com/")
+            .setMessage("把 GitHub 地址拼在这个前缀后面，例如 https://gh-proxy.com/")
             .setView(et)
             .setPositiveButton("保存") { _, _ ->
                 val p = et.text.toString().trim()
